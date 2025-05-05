@@ -1,0 +1,8 @@
+# Install required packages for TTS
+!pip install gTTS
+!pip install soundfile
+!pip install librosa
+!pip install torch
+!pip install numpy
+!pip install transformers
+!pip install openai-whisper 

@@ -21,46 +21,38 @@ class SpeechTranscriber:
         )
 
     def transcribe(self, audio_path):
-        """
-        Transcribe audio file to text using Whisper model.
-        
-        Args:
-            audio_path (str): Path to the audio file
-            
-        Returns:
-            str: Transcribed text
-        """
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found at {audio_path}")
             
-        # Transcribe the audio with improved parameters
-        result = self.whisper_model.transcribe(
-            audio_path,
-            language="en",
-            task="transcribe",
-            fp16=False,  # Use FP32 for better accuracy on CPU
-            condition_on_previous_text=False  # Prevent model from using previous context
-        )
-        
-        # Clean up the transcription
-        text = result["text"].strip()
-        # Remove any trailing incomplete sentences
-        text = re.sub(r'[^.!?]+$', '', text)
-        return text.strip()
+        try:
+            print(f"Starting transcription of {audio_path}")
+            # Transcribe the audio with improved parameters
+            result = self.whisper_model.transcribe(
+                audio_path,
+                language="en",
+                task="transcribe",
+                fp16=False,  # Use FP32 for better accuracy on CPU
+                condition_on_previous_text=False  # Prevent model from using previous context
+            )
+            
+            print(f"Raw transcription result: {result}")
+            
+            # Clean up the transcription
+            text = result["text"].strip()
+            # Remove any trailing incomplete sentences
+            text = re.sub(r'[^.!?]+$', '', text)
+            return text.strip()
+        except Exception as e:
+            print(f"Error during transcription: {str(e)}")
+            raise
 
     def is_sentence_complete(self, text):
-        """
-        Check if the text ends with a complete sentence.
-        """
         # Common sentence endings
         endings = ['.', '!', '?', '...']
         return any(text.strip().endswith(end) for end in endings)
 
     def clean_generated_text(self, text):
-        """
-        Clean up generated text to remove repetitions and ensure coherence.
-        """
-        # Remove any prompt-like text
+        # Remove any prompt-like text because I saw tyhe generated text had litrally just the prompt in them
         text = re.sub(r'^(Context:|Complete this sentence|maintaining the same context).*?:\s*', '', text)
         
         # Split into sentences
@@ -83,9 +75,6 @@ class SpeechTranscriber:
         return ' '.join(cleaned_sentences).strip()
 
     def extract_context(self, transcript):
-        """
-        Extract key context from the transcript for better continuation.
-        """
         # Get the last complete sentence
         sentences = re.split(r'([.!?])\s+', transcript)
         if len(sentences) > 1:
@@ -113,17 +102,6 @@ class SpeechTranscriber:
         return last_sentence, key_phrases, list(topics)
 
     def predict_next_text(self, transcript, min_words=20, max_words=30):
-        """
-        Predict the next 20-30 words that might follow the transcript.
-        
-        Args:
-            transcript (str): The transcribed text
-            min_words (int): Minimum number of words to generate
-            max_words (int): Maximum number of words to generate
-            
-        Returns:
-            str: Predicted continuation text
-        """
         # Extract context from the transcript
         last_sentence, key_phrases, topics = self.extract_context(transcript)
         
@@ -185,15 +163,6 @@ class SpeechTranscriber:
         return continuation
 
     def process_audio(self, audio_path):
-        """
-        Process audio file: transcribe and predict continuation.
-        
-        Args:
-            audio_path (str): Path to the audio file
-            
-        Returns:
-            tuple: (transcript, predicted_continuation)
-        """
         # First transcribe the audio
         transcript = self.transcribe(audio_path)
         

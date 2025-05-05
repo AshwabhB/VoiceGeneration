@@ -29,12 +29,11 @@ class FeatureExtractorAndTrainer:
         self.dataset_info_file = os.path.join(self.features_dir, 'dataset_info.pkl')
 
     def extract_features(self, audio_path, augment=False):
-        """Extract features from an audio file with optional augmentation."""
         try:
             # Load audio
             y, sr = librosa.load(audio_path, sr=self.sample_rate)
             
-            # Apply augmentation if requested
+            #Augmentation
             if augment:
                 # Add random noise
                 noise_factor = 0.005
@@ -88,7 +87,6 @@ class FeatureExtractorAndTrainer:
             return None
 
     def extract_features_batch(self, augment=False, force_extract=False):
-        """Extract features from all audio files in the dataset or load from saved files."""
         # Check if saved features exist and dataset hasn't changed
         if not force_extract and os.path.exists(self.features_file) and os.path.exists(self.labels_file) and os.path.exists(self.dataset_info_file):
             try:
@@ -356,7 +354,6 @@ class FeatureExtractorAndTrainer:
         torch.save(model.state_dict(), self.model_path)
         
     def classify_new_samples(self, model, new_samples_dir='Module1FeatureExtAndTraining/NewSample'):
-        """Classify new audio samples using the trained model."""
         print("\nLooking for new Samples in NewSample")
         
         # Check if the directory exists

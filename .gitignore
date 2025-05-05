@@ -2,6 +2,8 @@
 .venv/
 
 datasets/
+Datasets/
+Backup/
 
 __pycache__/
 *.py[cod]
@@ -25,3 +27,5 @@ Thumbs.db
 
 
 *[Bb]ackup* 
+Module4AudioRegenerator/Analysis/Audios/backup/
+Module4AudioRegenerator/Analysis/Audios/Other Generated audios/ 

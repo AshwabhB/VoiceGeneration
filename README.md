@@ -1,220 +1,242 @@
-# Voice Generation Project - Module Details
+# Voice Conversion System README
 
-This document provides a detailed explanation of each module in the Voice Generation Project, with special focus on Module 4.
+## Overview
+This project implements an advanced voice conversion system using GAN-based deep learning techniques. It can convert text-to-speech (TTS) audio to match the characteristics of a target voice while preserving the linguistic content.
 
-## Module 1: Feature Extraction and Training
+## Project Structure
 
-### Overview
-The FeatureExtractorAndTrainer class is responsible for extracting audio features and training a speaker recognition model.
+### Core Components
+1. `voice_converter_v2.py`: Main voice conversion implementation
+2. `voice_converter_runner.py`: Runner script and user interface
+3. `improved_generator.py`: Neural network architectures
+4. `audio_processor.py`: Audio processing utilities
 
-### Key Components
-1. **Feature Extraction**
-   - Extracts MFCCs (Mel-frequency cepstral coefficients) with 20 coefficients
-   - Computes spectral features (centroids, rolloff)
-   - Calculates zero crossing rate and RMS energy
-   - Supports audio augmentation (noise, time stretching, pitch shifting)
+### Directory Structure
+- `/content/drive/MyDrive/VC`: Training data directory
+- `/content/drive/MyDrive/VoiceGenv4/Output`: Output directory
+- `/content/drive/MyDrive/VoiceGenv4/Output/model`: Model weights directory
+- `/content/drive/MyDrive/VoiceGenv4/NewGenSample`: Target voice samples
+- `/content/drive/MyDrive/VoiceGenv4/Output/generatedTTS`: TTS audio directory
 
-2. **Model Architecture**
-   - Enhanced MLP (Multi-Layer Perceptron) with residual connections
-   - Feature extraction layer (512 neurons)
-   - Multiple residual blocks for better feature processing
-   - Classification head with multiple layers (512 → 256 → 128 → num_classes)
+### Dataset
+- `The VoxCeleb1 Dataset` was used. ```https://www.robots.ox.ac.uk/~vgg/data/voxceleb/vox1.html```
 
-3. **Training Process**
-   - Uses Adam optimizer with learning rate scheduling
-   - Implements early stopping with patience
-   - Handles class imbalance through weighted loss
-   - Supports batch processing and GPU acceleration
+## Complete Process Flow
 
-## Module 2: Speaker Embedding
+### Note:- The following modules are to be part of the project in the future, but are not being used right now. 
+1. Module3TranscriberAndGenerator : Will be used to predict the following words that can be used to generate the continuation speech.
+2. Module5TTS : Text generated from Module3TranscriberAndGenerator will be used to create TTS. Right now, hard-coded static text is used to generate TTS
 
-### Overview
-This module focuses on extracting and processing speaker-specific characteristics from audio.
+### 1. Setup and Installation
+1. Install required dependencies:
+   - librosa (0.10.1)
+   - soundfile (0.12.1)
+   - tqdm (4.66.1)
+   - numpy (1.24.3)
+   - torch (2.1.0)
+   - matplotlib (3.7.2)
+   - scipy (1.11.3)
+   - parselmouth (0.4.3)
+   - simplejson (3.19.2)
 
-### Key Components
-1. **Speaker Feature Extraction**
-   - Extracts speaker-specific features
-   - Processes voice characteristics
-   - Creates speaker embeddings
+2. Create necessary directories
+3. Set up module structure
 
-2. **Integration**
-   - Works with Module 1 for feature extraction
-   - Provides input to Module 4 for voice generation
+### 2. Training Process
+1. Data Preparation:
+   - Load training audio files
+   - Extract mel spectrograms
+   - Normalize using global statistics
+   - Apply data augmentation
 
-## Module 3: Speech Transcription and Text Generation
+2. Model Training:
+   - Initialize generator and discriminator
+   - Train using GAN approach
+   - Apply residual connections
+   - Use spectral normalization
+   - Implement learnable scaling
+   - Save checkpoints periodically
 
-### Overview
-The SpeechTranscriber class handles audio-to-text conversion and text continuation generation.
+3. Training Features:
+   - Gradient clipping
+   - Learning rate scheduling
+   - Batch normalization
+   - Residual connections
+   - Checkpoint saving and resuming
 
-### Key Components
-1. **Audio Transcription**
-   - Uses Whisper model for accurate transcription
-   - Supports multiple languages
-   - Handles various audio qualities
+### 3. Voice Conversion Process
+1. Input Processing:
+   - Load TTS audio
+   - Load target voice
+   - Extract mel spectrograms
+   - Normalize using global statistics
 
-2. **Text Generation**
-   - Uses GPT-2 large model for text continuation
-   - Maintains context and coherence
-   - Implements text cleaning and validation
+2. Feature Extraction:
+   - Extract pitch contours
+   - Analyze duration patterns
+   - Detect stress patterns
+   - Extract linguistic features
 
-3. **Context Processing**
-   - Extracts key phrases and topics
-   - Maintains sentence completeness
-   - Handles text cleaning and formatting
+3. Voice Conversion:
+   - Process through generator
+   - Apply voice characteristics
+   - Match linguistic features
+   - Blend source and target statistics
 
-## Module 4: Audio Regenerator (Detailed)
+4. Post-processing:
+   - Apply audio enhancements
+   - Crossfade overlapping chunks
+   - Normalize output
+   - Save converted audio
 
-### Overview
-The AudioRegenerator implements a conditional GAN for generating audio continuations that match the input speaker's voice characteristics.
+### 4. Debug and Analysis
+1. Debug Conversion:
+   - Save intermediate outputs
+   - Track statistics
+   - Monitor feature matching
+   - Analyze conversion quality
 
-### Architecture
+2. Performance Analysis:
+   - Monitor training metrics
+   - Track conversion quality
+   - Analyze feature matching
+   - Evaluate output quality
 
-1. **Generator Network**
-   - U-Net style architecture with encoder-decoder
-   - Input channels: 80 (mel spectrogram bands)
-   - Hidden channels: 512
-   - Encoder path:
-     * 4 convolutional layers with increasing channels
-     * Batch normalization and LeakyReLU activation
-     * Downsampling through stride
-   - Decoder path:
-     * 4 transposed convolutional layers
-     * Batch normalization and ReLU activation
-     * Upsampling through stride
-     * Final tanh activation
+## Key Features
 
-2. **Discriminator Network**
-   - Sequential architecture
-   - Input channels: 80
-   - Hidden channels: 512
-   - 5 convolutional layers with increasing channels
-   - LeakyReLU activation
-   - Final sigmoid activation for binary classification
+### Neural Network Architecture
+- Generator with residual connections
+- Discriminator with spectral normalization
+- Learnable scaling for dynamic range
+- Batch normalization for stability
 
-3. **Audio Processing**
-   - Sample rate: 22050 Hz
-   - Mel spectrogram conversion
-   - Normalization and standardization
-   - Mask generation for missing segments
+### Audio Processing
+- Mel spectrogram extraction
+- Pitch extraction and modification
+- Duration analysis
+- Stress pattern detection
+- Audio enhancement techniques
 
-### Training Process
+### Voice Conversion
+- Linguistic feature preservation
+- Voice characteristic matching
+- Natural prosody transfer
+- High-quality audio output
 
-1. **Data Preparation**
-   - Loads audio files from dataset
-   - Converts to mel spectrograms
-   - Creates masks for missing segments
-   - Batches data for training
+### Training Improvements
+- Stable GAN training
+- Efficient memory usage
+- Checkpoint saving
+- Training resumption
+- Progress monitoring
 
-2. **Training Loop**
-   - Alternates between generator and discriminator training
-   - Uses adversarial loss and L1 loss
-   - Implements batch processing
-   - Saves model checkpoints
+## Usage
 
-3. **Generation Process**
-   - Takes context audio as input
-   - Processes through mel spectrogram
-   - Generates missing segments
-   - Converts back to audio
+### Training
+1. Run `voice_converter_runner.py`
+2. Select option 1 for new training
+3. Monitor training progress
+4. Save checkpoints periodically
 
-### Integration Points
+### Voice Conversion
+1. Run `voice_converter_runner.py`
+2. Select option 3 for conversion
+3. Choose target voice
+4. Select TTS audio
+5. Process and save output
 
-1. **With Module 3 (SpeechTranscriber)**
-   - Uses transcribed text to condition generation
-   - Maintains semantic coherence
-   - Aligns audio with text
+### Debug Mode
+1. Run `voice_converter_runner.py`
+2. Select option 4 for debug
+3. Analyze intermediate outputs
+4. Monitor conversion process
 
-2. **With Module 2 (SpeakerEmbedding)**
-   - Incorporates speaker characteristics
-   - Maintains voice consistency
-   - Enhances speaker similarity
+## Requirements
+- Python 3.6+
+- CUDA-capable GPU (recommended)
+- Sufficient disk space for audio files
+- Google Colab support (optional)
 
-### Output and Storage
+## Notes
+- Training requires significant computational resources
+- Voice conversion quality depends on training data
+- Debug mode helps analyze conversion process
+- Regular checkpoint saving is recommended
 
-1. **Model Weights**
-   - Saved as .pth files
-   - Includes generator and discriminator states
-   - Stores optimizer states
-   - Maintains training metadata
+## Detailed Process Flow
 
-2. **Generated Audio**
-   - Saved as .wav files
-   - Stored in output/generated directory
-   - Named with original file base name + "_gen"
+### 1. Initial Setup and Execution
+1. User runs `voice_converter_runner.py`
+2. Script executes `main()` function which:
+   - Calls `create_module_directory()` to set up directory structure
+   - Calls `install_dependencies()` to install required packages
+   - Calls `save_module_files()` to initialize module files
+   - Creates instance of `EnhancedVoiceConverter` from `voice_converter_v2.py`
 
-### Hyperparameters
+### 2. Training Process (Option 1)
+1. User selects option 1 (Train new model)
+2. `EnhancedVoiceConverter.train()` is called which:
+   - Initializes `ImprovedVoiceDataset` with data from `/content/drive/MyDrive/VC`
+   - Creates PyTorch DataLoader for batch processing
+   - Initializes `ImprovedGenerator` and `ImprovedDiscriminator` from `improved_generator.py`
+   - Sets up optimizers and learning rate schedulers
+   - For each epoch:
+     - Calls `ImprovedVoiceDataset.__getitem__()` for each batch
+     - Processes audio through `AudioProcessor.audio_to_mel()`
+     - Updates `GlobalStats` using `update_from_batch()`
+     - Trains generator and discriminator in alternating fashion
+     - Saves checkpoint using `save_model()` and `save_training_state()`
 
-1. **Generator Network**
-   - Learning rate: 0.0002
-   - Batch size: 16
-   - Input channels: 80 (mel spectrogram bands)
-   - Hidden channels: 512
-   - Number of residual blocks: 6
-   - Kernel size: 3x3
-   - Stride: 2 for downsampling/upsampling
-   - Padding: 1
-   - Dropout rate: 0.1
+### 3. Resume Training (Option 2)
+1. User selects option 2 (Resume training)
+2. `EnhancedVoiceConverter.load_model(resume_training=True)` is called which:
+   - Checks for latest checkpoint in model directory
+   - Loads model weights using `torch.load()`
+   - Restores optimizer states
+   - Loads `GlobalStats` values
+   - Returns to `train_from_epoch()` with saved epoch number
+   - Continues training from saved state
 
-2. **Discriminator Network**
-   - Learning rate: 0.0001
-   - Batch size: 16
-   - Input channels: 80
-   - Hidden channels: 512
-   - Number of layers: 5
-   - Kernel size: 4x4
-   - Stride: 2
-   - Padding: 1
-   - LeakyReLU slope: 0.2
+### 4. Voice Conversion (Option 3)
+1. User selects option 3 (Convert voice)
+2. `EnhancedVoiceConverter.load_model()` is called to load trained model
+3. User selects target voice and TTS audio files
+4. `EnhancedVoiceConverter.convert_voice()` is called which:
+   - Loads target voice using `AudioProcessor.load_audio()`
+   - Extracts target features using `AudioProcessor.extract_linguistic_features()`
+   - Loads TTS audio and extracts features
+   - Processes TTS audio through generator:
+     - Splits into chunks using `AudioProcessor.split_audio_into_chunks()`
+     - Processes each chunk through generator
+     - Combines chunks using `AudioProcessor.combine_chunks()`
+   - Applies post-processing:
+     - Blends statistics using `blend_statistics()`
+     - Enhances audio using `AudioProcessor.enhance_audio()`
+     - Saves output using `AudioProcessor.save_audio()`
 
-3. **Training Parameters**
-   - Number of epochs: 50
-   - Optimizer: Adam
-   - Beta1: 0.5
-   - Beta2: 0.999
-   - Weight decay: 0.0001
-   - Lambda L1: 100 (L1 loss weight)
-   - Lambda GAN: 1 (GAN loss weight)
+### 5. Debug Mode (Option 4)
+1. User selects option 4 (Debug conversion)
+2. `EnhancedVoiceConverter.debug_conversion()` is called which:
+   - Creates debug directory with timestamp
+   - Saves original audio files
+   - Extracts and saves mel spectrograms
+   - Processes small test chunk through generator
+   - Saves intermediate outputs:
+     - Input tensor statistics
+     - Output tensor statistics
+     - Different denormalization approaches
+   - Performs full conversion with detailed logging
+   - Saves all debug information to debug directory
 
-4. **Audio Processing**
-   - Sample rate: 22050 Hz
-   - Hop length: 256
-   - Window size: 1024
-   - Number of mel bands: 80
-   - Mel scale: 0-8000 Hz
-   - Normalization: Min-max scaling to [-1, 1]
+### 6. Helper Functions and Utilities
+- `get_available_files()`: Used throughout to list audio files
+- `AudioProcessor` methods: Used for all audio processing
+- `GlobalStats` methods: Used for normalization
+- `blend_statistics()`: Used for voice characteristic matching
 
-### Usage Example
-
-```python
-# Initialize regenerator
-regenerator = AudioRegenerator(
-    data_dir="path/to/dataset",
-    output_dir="path/to/output",
-    model_dir="path/to/model",
-    num_epochs=50
-)
-
-# Train model
-regenerator.train()
-
-# Generate missing audio
-generated_audio = regenerator.generate_missing("path/to/context.wav")
-regenerator.save_generated(generated_audio, "path/to/output.wav")
-```
-
-### Performance Considerations
-
-1. **Hardware Requirements**
-   - GPU acceleration when available
-   - Minimum 8GB RAM recommended
-   - Storage for dataset and generated audio
-
-2. **Training Time**
-   - Depends on dataset size
-   - Affected by number of epochs
-   - Varies with hardware capabilities
-
-3. **Quality Factors**
-   - Audio quality consistency
-   - Speaking style similarity
-   - Dataset size and diversity 
+### 7. Error Handling and Recovery
+- Checkpoint saving every epoch
+- Gradient clipping during training
+- Memory management for large audio files
+- Fallback methods for feature extraction
+- Error logging in debug mode 
