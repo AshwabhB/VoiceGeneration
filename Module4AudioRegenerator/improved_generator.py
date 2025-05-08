@@ -32,10 +32,10 @@ class ResidualBlock(nn.Module):
 
 class ImprovedGenerator(nn.Module):
     """Improved generator with residual connections and learnable scaling"""
-    def __init__(self, input_channels=80, output_channels=80, hidden_channels=256, linguistic_dim=10):
+    def __init__(self, input_channels=80, output_channels=80, hidden_channels=512, linguistic_dim=10):
         super(ImprovedGenerator, self).__init__()
 
-        # Encoder with reduced channel sizes
+        # Encoder
         self.encoder = nn.Sequential(
             nn.Conv1d(input_channels, hidden_channels, kernel_size=7, padding=3),
             nn.BatchNorm1d(hidden_channels),
@@ -54,21 +54,22 @@ class ImprovedGenerator(nn.Module):
             nn.LeakyReLU(0.2),
         )
         
-        # Linguistic feature processing with reduced size
+        # Linguistic feature processing
         self.linguistic_processor = nn.Sequential(
-            nn.Linear(linguistic_dim, hidden_channels * 4),  # Reduced from 8
+            nn.Linear(linguistic_dim, hidden_channels * 8),
             nn.LeakyReLU(0.2),
-            nn.Linear(hidden_channels * 4, hidden_channels * 8),  # Reduced from 8
+            nn.Linear(hidden_channels * 8, hidden_channels * 8),
             nn.LeakyReLU(0.2)
         )
         
-        # Reduced number of residual blocks
+        # Residual blocks
         self.res_blocks = nn.Sequential(
+            ResidualBlock(hidden_channels * 8),
             ResidualBlock(hidden_channels * 8),
             ResidualBlock(hidden_channels * 8)
         )
 
-        # Decoder with reduced channel sizes
+        # Decoder
         self.decoder = nn.Sequential(
             nn.ConvTranspose1d(hidden_channels * 8, hidden_channels * 4, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm1d(hidden_channels * 4),
@@ -108,7 +109,7 @@ class ImprovedGenerator(nn.Module):
 
 class ImprovedDiscriminator(nn.Module):
     """Improved discriminator with spectral normalization for better stability"""
-    def __init__(self, input_channels=80, hidden_channels=256):
+    def __init__(self, input_channels=80, hidden_channels=512):
         super(ImprovedDiscriminator, self).__init__()
 
         # Apply spectral normalization for stable GAN training

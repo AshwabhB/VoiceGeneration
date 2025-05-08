@@ -213,9 +213,10 @@ def generate_detailed_observations(original_features, tts_features, generated_fe
 def main():
     print("Starting audio analysis...")
     
-    original_y, original_sr = load_audio("Audios/Original.wav")
-    tts_y, tts_sr = load_audio("Audios/TTS.wav")
-    generated_y, generated_sr = load_audio("Audios/Generated.wav")
+    # Load audio files
+    original_y, original_sr = load_audio("Module4AudioRegenerator/Analysis/Audios/Original.wav")
+    tts_y, tts_sr = load_audio("Module4AudioRegenerator/Analysis/Audios/TTS.wav")
+    generated_y, generated_sr = load_audio("Module4AudioRegenerator/Analysis/Audios/Generated.wav")
     
     original_features = extract_features_for_analysis(original_y, original_sr)
     tts_features = extract_features_for_analysis(tts_y, tts_sr)

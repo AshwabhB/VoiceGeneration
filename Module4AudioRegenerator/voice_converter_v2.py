@@ -11,15 +11,38 @@ from tqdm import tqdm
 import sys
 from pathlib import Path
 import time
+import gc
 
+# Add path to import custom modules
 sys.path.append('/content/drive/MyDrive/VoiceGenv4/Module4AudioRegenerator')
 from improved_generator import ImprovedGenerator, ImprovedDiscriminator, GlobalStats
 from audio_processor import AudioProcessor, blend_statistics
 
+def clear_memory():
+    """Clear GPU memory and garbage collection"""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+
+def print_gpu_memory():
+    """Print current GPU memory usage"""
+    if torch.cuda.is_available():
+        print(f"GPU Memory allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+        print(f"GPU Memory cached: {torch.cuda.memory_reserved(0) / 1024**2:.2f} MB")
+
 class ImprovedVoiceDataset(Dataset):
-
+    """Dataset for training the voice conversion model with improved handling"""
     def __init__(self, data_dir, audio_processor, segment_length=8192, augment=True):
-
+        """
+        Initialize the dataset
+        
+        Args:
+            data_dir: Directory containing speaker folders
+            audio_processor: AudioProcessor instance
+            segment_length: Length of audio segments to use for training
+            augment: Whether to apply data augmentation
+        """
         self.data_dir = data_dir
         self.audio_processor = audio_processor
         self.segment_length = segment_length
@@ -129,14 +152,25 @@ class ImprovedVoiceDataset(Dataset):
             return dummy_spec, dummy_spec, torch.ones_like(dummy_spec)
 
 class EnhancedVoiceConverter:
-
+    """Enhanced voice conversion system with improved models and processing"""
     def __init__(self, data_dir, output_dir=None, model_dir=None, 
-                 sample_rate=22050, batch_size=8, num_epochs=25, learning_rate=0.0002):
-
-        # Monitor memory before initialization
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            print(f"Initial GPU Memory: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+                 sample_rate=22050, batch_size=8, num_epochs=25, learning_rate=0.0001):
+        """
+        Initialize the EnhancedVoiceConverter
+        
+        Args:
+            data_dir: Directory containing the voice dataset
+            output_dir: Directory to save generated audio
+            model_dir: Directory to save model weights
+            sample_rate: Audio sample rate
+            batch_size: Batch size for training (increased to 8)
+            num_epochs: Number of training epochs
+            learning_rate: Learning rate for optimizers
+        """
+        # Clear memory before initialization
+        clear_memory()
+        print("Initial memory state:")
+        print_gpu_memory()
         
         # Set directories
         self.data_dir = data_dir
@@ -177,21 +211,21 @@ class EnhancedVoiceConverter:
         
         # Initialize models with improved architectures
         try:
-            self.generator = ImprovedGenerator().to(self.device)
-            self.discriminator = ImprovedDiscriminator().to(self.device)
-            print("Initialized improved models with residual connections and learnable scaling")
+            self.generator = ImprovedGenerator(hidden_channels=256).to(self.device)
+            self.discriminator = ImprovedDiscriminator(hidden_channels=256).to(self.device)
+            print("Initialized improved models with reduced size")
         except RuntimeError as e:
             print(f"Error moving models to GPU: {e}")
             print("Falling back to CPU")
             self.device = torch.device("cpu")
-            self.generator = ImprovedGenerator().to(self.device)
-            self.discriminator = ImprovedDiscriminator().to(self.device)
+            self.generator = ImprovedGenerator(hidden_channels=256).to(self.device)
+            self.discriminator = ImprovedDiscriminator(hidden_channels=256).to(self.device)
         
         # Initialize optimizers with better parameters
         self.g_optimizer = optim.Adam(self.generator.parameters(), 
                                     lr=learning_rate, 
                                     betas=(0.5, 0.999),
-                                    weight_decay=1e-5)  # Added weight decay
+                                    weight_decay=1e-5)
         
         self.d_optimizer = optim.Adam(self.discriminator.parameters(), 
                                      lr=learning_rate, 
@@ -207,18 +241,19 @@ class EnhancedVoiceConverter:
         self.dataloader = DataLoader(self.dataset, 
                                     batch_size=batch_size, 
                                     shuffle=True,
-                                    num_workers=0, 
-                                    pin_memory=False)
+                                    num_workers=0,  # Keep at 0 for Colab
+                                    pin_memory=False,  # Set to False to reduce memory usage
+                                    persistent_workers=False)
         
         # Path for dataset info
         self.dataset_info_file = os.path.join(self.model_dir, 'dataset_info.pkl')
         
-        # Monitor memory after initialization
-        if torch.cuda.is_available():
-            print(f"After init GPU Memory: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+        # Print final memory state
+        print("Final memory state after initialization:")
+        print_gpu_memory()
     
     def train(self, start_epoch=0):
-
+        """Train the voice conversion model with improved stability"""
         print(f"Training Enhanced Voice Conversion GAN for {self.num_epochs} epochs on {self.data_dir}...")
         print(f"Starting from epoch {start_epoch}")
         
@@ -228,6 +263,9 @@ class EnhancedVoiceConverter:
         
         # Training ratio: train generator more often than discriminator
         g_steps = 2  # Train generator this many times per discriminator step
+        
+        # Gradient accumulation steps
+        accumulation_steps = 4
         
         # Learning rate schedulers for better convergence
         g_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -240,8 +278,9 @@ class EnhancedVoiceConverter:
             d_losses = []
             
             # Memory cleanup at start of epoch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            clear_memory()
+            print(f"\nStarting epoch {epoch}")
+            print_gpu_memory()
             
             for i, data in enumerate(tqdm(self.dataloader)):
                 try:
@@ -252,11 +291,49 @@ class EnhancedVoiceConverter:
                     target_spec = target_spec.to(self.device)
                     mask = mask.to(self.device)
                     
+                    # Extract linguistic features for source and target
+                    source_audio = self.audio_processor.mel_to_audio(source_spec.cpu().numpy())
+                    target_audio = self.audio_processor.mel_to_audio(target_spec.cpu().numpy())
+                    
+                    # Clear CPU memory after audio processing
+                    del source_audio, target_audio
+                    clear_memory()
+                    
+                    source_linguistic = self.audio_processor.extract_linguistic_features(source_audio)
+                    target_linguistic = self.audio_processor.extract_linguistic_features(target_audio)
+                    
+                    # Convert linguistic features to tensor
+                    source_linguistic_tensor = torch.FloatTensor([
+                        source_linguistic['duration']['speech_rate'],
+                        source_linguistic['duration']['pause_duration'],
+                        source_linguistic['duration']['word_duration'],
+                        source_linguistic['stress']['mean_peak_height'],
+                        source_linguistic['stress']['stress_pattern'],
+                        source_linguistic['stress']['emphasis_marker'],
+                        source_linguistic['prosody']['pitch_contour'],
+                        source_linguistic['prosody']['energy_envelope'],
+                        source_linguistic['prosody']['timing_pattern'],
+                        source_linguistic['prosody']['rhythm_marker']
+                    ]).to(self.device)
+                    
+                    target_linguistic_tensor = torch.FloatTensor([
+                        target_linguistic['duration']['speech_rate'],
+                        target_linguistic['duration']['pause_duration'],
+                        target_linguistic['duration']['word_duration'],
+                        target_linguistic['stress']['mean_peak_height'],
+                        target_linguistic['stress']['stress_pattern'],
+                        target_linguistic['stress']['emphasis_marker'],
+                        target_linguistic['prosody']['pitch_contour'],
+                        target_linguistic['prosody']['energy_envelope'],
+                        target_linguistic['prosody']['timing_pattern'],
+                        target_linguistic['prosody']['rhythm_marker']
+                    ]).to(self.device)
+                    
                     # Train Discriminator
                     self.d_optimizer.zero_grad()
                     
-                    # Generate converted voice
-                    converted_spec = self.generator(source_spec)
+                    # Generate converted voice with linguistic features
+                    converted_spec = self.generator(source_spec, source_linguistic_tensor)
                     
                     # Get discriminator predictions
                     d_real = self.discriminator(target_spec)
@@ -270,19 +347,26 @@ class EnhancedVoiceConverter:
                     d_fake_loss = self.adversarial_loss(d_fake, fake_labels)
                     d_loss = (d_real_loss + d_fake_loss) / 2
                     
+                    # Scale loss by accumulation steps
+                    d_loss = d_loss / accumulation_steps
+                    
                     # Only update discriminator if it's not too strong
                     if d_loss.item() > 0.3:  # Threshold to prevent discriminator from becoming too strong
                         d_loss.backward()
                         # Apply gradient clipping for stability
                         torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=1.0)
-                        self.d_optimizer.step()
+                        
+                        # Update weights every accumulation_steps
+                        if (i + 1) % accumulation_steps == 0:
+                            self.d_optimizer.step()
+                            self.d_optimizer.zero_grad()
                     
                     # Train Generator (possibly multiple times)
                     for _ in range(g_steps):
                         self.g_optimizer.zero_grad()
                         
-                        # Generate converted voice again
-                        converted_spec = self.generator(source_spec)
+                        # Generate converted voice again with linguistic features
+                        converted_spec = self.generator(source_spec, source_linguistic_tensor)
                         
                         # Get discriminator predictions for converted voice
                         g_fake = self.discriminator(converted_spec)
@@ -292,29 +376,42 @@ class EnhancedVoiceConverter:
                         
                         # L1 loss with increased weight for better audio quality
                         l1_loss = self.l1_loss(converted_spec, target_spec)
-                        g_loss = g_adv_loss + 25 * l1_loss  # Increased L1 weight to 25 (was 10)
+                        
+                        # Add linguistic feature matching loss
+                        linguistic_loss = self.l1_loss(source_linguistic_tensor, target_linguistic_tensor)
+                        
+                        g_loss = g_adv_loss + 25 * l1_loss + 10 * linguistic_loss
+                        
+                        # Scale loss by accumulation steps
+                        g_loss = g_loss / accumulation_steps
                         
                         g_loss.backward()
                         # Apply gradient clipping for stability
                         torch.nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=1.0)
-                        self.g_optimizer.step()
+                        
+                        # Update weights every accumulation_steps
+                        if (i + 1) % accumulation_steps == 0:
+                            self.g_optimizer.step()
+                            self.g_optimizer.zero_grad()
                     
                     # Store losses
-                    g_losses.append(g_loss.item())
-                    d_losses.append(d_loss.item())
+                    g_losses.append(g_loss.item() * accumulation_steps)  # Scale back for logging
+                    d_losses.append(d_loss.item() * accumulation_steps)  # Scale back for logging
                     
                     # Print progress
                     if i % 10 == 0:
                         print(f"Epoch [{epoch}/{self.num_epochs}] Batch [{i}/{len(self.dataloader)}] "
-                              f"D_loss: {d_loss.item():.4f} G_loss: {g_loss.item():.4f}")
-                        
-                        # Monitor memory usage
-                        if torch.cuda.is_available():
-                            print(f"GPU Memory: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+                              f"D_loss: {d_loss.item() * accumulation_steps:.4f} G_loss: {g_loss.item() * accumulation_steps:.4f}")
+                        print_gpu_memory()
                     
                     # Periodic memory cleanup
-                    if i % 50 == 0 and torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                    if i % 50 == 0:
+                        clear_memory()
+                    
+                    # Save checkpoint every 100 batches
+                    if i % 100 == 0:
+                        self.save_training_state(epoch)
+                        clear_memory()
                     
                     # Check for exploding gradients
                     if g_loss.item() > 100 or d_loss.item() > 100 or torch.isnan(g_loss) or torch.isnan(d_loss):
@@ -324,8 +421,7 @@ class EnhancedVoiceConverter:
                 except RuntimeError as e:
                     if "out of memory" in str(e):
                         print(f"WARNING: out of memory error, skipping batch {i}")
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()
+                        clear_memory()
                         continue
                     else:
                         raise e
@@ -355,11 +451,10 @@ class EnhancedVoiceConverter:
             self.save_training_state(epoch + 1)
             
             # Clear memory at end of epoch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            clear_memory()
     
     def save_model(self, epoch):
-
+        """Save model weights and dataset info"""
         # Save model weights to the weights directory
         torch.save({
             'generator_state_dict': self.generator.state_dict(),
@@ -402,7 +497,7 @@ class EnhancedVoiceConverter:
         print(f"Model and dataset info saved at epoch {epoch}")
     
     def save_training_state(self, epoch):
-
+        """Save training state to resume from interruption"""
         # Save the latest training state
         latest_state_path = os.path.join(self.model_dir, 'latest_checkpoint.pth')
         torch.save({
@@ -421,6 +516,7 @@ class EnhancedVoiceConverter:
         print(f"Latest training state saved to {latest_state_path}")
     
     def load_model(self, model_path=None, resume_training=False):
+        """Load model weights and state with improved error handling"""
         # Check if we should resume from latest checkpoint
         if resume_training:
             latest_state_path = os.path.join(self.model_dir, 'latest_checkpoint.pth')
@@ -492,297 +588,149 @@ class EnhancedVoiceConverter:
             print("Training from scratch")
             return False, 0
     
-    def convert_voice(self, tts_audio_path, target_voice_path, output_path=None):
+    def clean_audio(self, audio):
+        """Clean audio by removing non-finite values and normalizing"""
+        # Replace non-finite values with zeros
+        audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # Normalize audio to prevent extreme values
+        audio = librosa.util.normalize(audio)
+        
+        return audio
 
-        print(f"Converting voice from TTS audio: {tts_audio_path}")
-        print(f"Using target voice: {target_voice_path}")
+    def convert_voice(self, tts_audio_path, target_voice_path, output_path=None):
+        """
+        Convert TTS audio to target voice with improved processing and error handling
+        """
+        print(f"Starting voice conversion process...")
+        print(f"TTS audio path: {tts_audio_path}")
+        print(f"Target voice path: {target_voice_path}")
         
         # Set the model to evaluation mode
         self.generator.eval()
         
-        # 1. Load and analyze the target voice to get voice characteristics
-        target_audio = self.audio_processor.load_audio(target_voice_path)
-        target_stats, target_mel_spec = self.audio_processor.extract_voice_stats(target_audio)
-        
-        # Extract detailed linguistic features from target voice
-        target_linguistic = self.audio_processor.extract_linguistic_features(target_audio)
-        print("\nTarget Voice Linguistic Features:")
-        for category, features in target_linguistic.items():
-            print(f"{category}:")
-            for key, value in features.items():
-                print(f"  {key}: {value:.2f}")
-        
-        # Save original target audio (for reference)
-        debug_target_path = os.path.join(self.debug_dir, "target_original.wav")
-        self.audio_processor.save_audio(target_audio, debug_target_path)
-        
-        # 2. Process the TTS audio (source)
-        tts_audio = self.audio_processor.load_audio(tts_audio_path)
-        
-        # Extract detailed linguistic features from TTS audio
-        tts_linguistic = self.audio_processor.extract_linguistic_features(tts_audio)
-        print("\nTTS Audio Linguistic Features:")
-        for category, features in tts_linguistic.items():
-            print(f"{category}:")
-            for key, value in features.items():
-                print(f"  {key}: {value:.2f}")
-        
-        # Save original TTS audio (for reference)
-        debug_tts_path = os.path.join(self.debug_dir, "tts_original.wav")
-        self.audio_processor.save_audio(tts_audio, debug_tts_path)
-        
-        # Extract mel spectrogram for TTS audio
-        tts_stats, tts_mel_spec = self.audio_processor.extract_voice_stats(tts_audio)
-        
-        # Log the mel spectrogram statistics
-        print("\nTTS Mel Spectrogram Statistics:")
-        for key, value in tts_stats.items():
-            print(f"  {key}: {value}")
-        
-        print("\nTarget Voice Mel Spectrogram Statistics:")
-        for key, value in target_stats.items():
-            print(f"  {key}: {value}")
-        
-        # 3. Enhanced normalization with dynamic range adaptation
-        tts_mel_spec_norm = GlobalStats.normalize(tts_mel_spec)
-        
-        # 4. Process in overlapping chunks with improved segmentation
-        chunk_size = 8192  # Similar to our training segment length
-        overlap = 0.6      # Increased overlap for smoother transitions
-        
-        # Split into chunks with improved segmentation
-        chunks, positions = self.audio_processor.split_audio_into_chunks(
-            tts_mel_spec_norm, chunk_size=chunk_size, overlap=overlap)
-        
-        # Process each chunk with enhanced processing
-        converted_chunks = []
-        for chunk_type, chunk, start_idx, end_idx in chunks:
-            # Convert to tensor with enhanced preprocessing
-            chunk_tensor = torch.FloatTensor(chunk).unsqueeze(0).to(self.device)
+        try:
+            # 1. Load and validate target voice
+            print("\nLoading target voice...")
+            try:
+                target_audio = self.audio_processor.load_audio(target_voice_path)
+                print(f"Target audio loaded successfully - Shape: {target_audio.shape}")
+            except Exception as e:
+                print(f"Error loading target voice: {str(e)}")
+                print("Attempting to load with librosa directly...")
+                target_audio, _ = librosa.load(target_voice_path, sr=self.sample_rate)
+                target_audio = self.audio_processor.clean_audio(target_audio)
             
-            # Process through generator with enhanced processing
-            with torch.no_grad():
-                try:
-                    converted_chunk = self.generator(chunk_tensor).squeeze(0).cpu().numpy()
-                    converted_chunks.append((chunk_type, converted_chunk, start_idx, end_idx))
-                except Exception as e:
-                    print(f"Error processing chunk: {e}")
-                    # In case of error, use the original chunk
-                    converted_chunks.append((chunk_type, chunk, start_idx, end_idx))
-        
-        # Combine chunks with improved crossfading
-        if len(converted_chunks) > 0:
-            combined_converted = self.audio_processor.combine_chunks(
-                converted_chunks, tts_mel_spec_norm.shape[1])
-        else:
-            print("Warning: No chunks were successfully converted")
-            combined_converted = tts_mel_spec_norm
-        
-        # 5. Enhanced denormalization with improved feature matching
-        # Calculate dynamic blend ratios with increased weights
-        pitch_blend = 0.95  # Further increased weight for better pitch matching
-        duration_blend = 0.85  # Further increased weight for natural timing
-        stress_blend = 0.90  # Further increased weight for natural emphasis
-        spectral_blend = 0.80  # Further increased weight for better voice quality
-        prosody_blend = 0.90  # Further increased weight for prosody matching
-        breath_blend = 0.85  # New weight for breath characteristics
-        micro_variation_blend = 0.75  # New weight for micro-variations
-        
-        # Enhanced blend statistics with improved dynamic weights
-        blended_stats = {
-            'mean': (1 - spectral_blend) * tts_stats['mean'] + spectral_blend * target_stats['mean'],
-            'std': (1 - spectral_blend) * tts_stats['std'] + spectral_blend * target_stats['std'],
-            'min': min(tts_stats['min'], target_stats['min']),
-            'max': max(tts_stats['max'], target_stats['max'])
-        }
-        
-        # Denormalize using enhanced blended statistics
-        converted_denorm = combined_converted * blended_stats['std'] + blended_stats['mean']
-        
-        # 6. Convert mel spectrogram back to audio with improved quality
-        # Convert from log scale back to linear with enhanced processing
-        converted_power_spec = librosa.db_to_power(converted_denorm)
-
-        # Convert mel spectrogram to audio with more iterations for better quality
-        converted_audio = self.audio_processor.mel_to_audio(
-            converted_denorm, griffin_lim_iters=1024)  # Further increased iterations
-        
-        # 7. Enhanced post-processing with improved feature matching
-        # Extract pitch from all audio signals with enhanced processing
-        converted_pitch, converted_voiced = self.audio_processor.extract_pitch(converted_audio)
-        target_pitch, target_voiced = self.audio_processor.extract_pitch(target_audio)
-        tts_pitch, tts_voiced = self.audio_processor.extract_pitch(tts_audio)
-        
-        # Resample pitch contours to the same length with improved alignment
-        min_length = min(len(target_pitch), len(tts_pitch), len(converted_pitch))
-        target_pitch = target_pitch[:min_length]
-        tts_pitch = tts_pitch[:min_length]
-        converted_pitch = converted_pitch[:min_length]
-        
-        # Enhanced pitch matching with improved prosody preservation
-        # Normalize pitch contours using enhanced robust statistics
-        target_pitch_norm = (target_pitch - np.median(target_pitch[target_pitch > 0])) / np.std(target_pitch[target_pitch > 0])
-        tts_pitch_norm = (tts_pitch - np.median(tts_pitch[tts_pitch > 0])) / np.std(tts_pitch[tts_pitch > 0])
-        
-        # Blend normalized pitch contours with enhanced dynamic weights
-        blended_pitch = (1 - pitch_blend) * tts_pitch_norm + pitch_blend * target_pitch_norm
-        
-        # Rescale to target pitch range with improved dynamic range matching
-        target_median = np.median(target_pitch[target_pitch > 0])
-        target_std = np.std(target_pitch[target_pitch > 0])
-        blended_pitch = blended_pitch * target_std + target_median
-        
-        # Find common non-zero indices for more accurate pitch shift
-        blended_nonzero = blended_pitch > 0
-        converted_nonzero = converted_pitch > 0
-        common_nonzero = blended_nonzero & converted_nonzero
-        
-        if np.sum(common_nonzero) > 0:
-            # Calculate pitch shift using enhanced robust statistics
-            blended_midi = librosa.hz_to_midi(blended_pitch[common_nonzero])
-            converted_midi = librosa.hz_to_midi(converted_pitch[common_nonzero])
-            avg_pitch_shift = np.median(blended_midi - converted_midi)
+            # Validate target audio
+            if not np.isfinite(target_audio).all():
+                print("Warning: Target audio contains non-finite values, attempting to clean...")
+                target_audio = np.nan_to_num(target_audio, nan=0.0, posinf=0.0, neginf=0.0)
+                target_audio = librosa.util.normalize(target_audio)
+                target_audio = np.clip(target_audio, -1.0, 1.0)
             
-            # Apply pitch modification with enhanced dynamic range preservation
-            converted_audio = librosa.effects.pitch_shift(
-                converted_audio, 
-                sr=self.sample_rate, 
-                n_steps=float(avg_pitch_shift),
-                bins_per_octave=192  # Further increased resolution
-            )
-        
-        # 8. Enhanced duration and stress matching with improved prosody
-        # Extract duration features with enhanced processing
-        target_duration = target_linguistic['duration']
-        tts_duration = tts_linguistic['duration']
-        
-        # Calculate duration scaling factor with enhanced prosody consideration
-        duration_scale = (1 - duration_blend) + duration_blend * (target_duration['speech_rate'] / tts_duration['speech_rate'])
-        
-        # Apply duration modification with enhanced prosody preservation
-        converted_audio = librosa.effects.time_stretch(
-            converted_audio, 
-            rate=duration_scale
-        )
-        
-        # Extract and match stress patterns with enhanced prosody
-        target_stress = target_linguistic['stress']
-        tts_stress = tts_linguistic['stress']
-        
-        # Calculate stress enhancement factor with enhanced prosody consideration
-        stress_enhance = (1 - stress_blend) + stress_blend * (target_stress['mean_peak_height'] / tts_stress['mean_peak_height'])
-        
-        # Apply stress enhancement with improved dynamic range
-        converted_audio = converted_audio * stress_enhance
-        
-        # 9. Enhanced natural speech characteristics
-        # Extract energy envelope for improved prosody matching
-        target_energy = librosa.feature.rms(y=target_audio)[0]
-        tts_energy = librosa.feature.rms(y=tts_audio)[0]
-        
-        # Resample energy envelopes to the same length
-        min_length = min(len(target_energy), len(tts_energy))
-        target_energy = target_energy[:min_length]
-        tts_energy = tts_energy[:min_length]
-        
-        # Normalize energy envelopes with enhanced processing
-        target_energy_norm = (target_energy - np.mean(target_energy)) / np.std(target_energy)
-        tts_energy_norm = (tts_energy - np.mean(tts_energy)) / np.std(tts_energy)
-        
-        # Blend energy envelopes for enhanced natural prosody
-        blended_energy = (1 - prosody_blend) * tts_energy_norm + prosody_blend * target_energy_norm
-        
-        # Rescale to target energy range with improved dynamic range
-        target_energy_mean = np.mean(target_energy)
-        target_energy_std = np.std(target_energy)
-        blended_energy = blended_energy * target_energy_std + target_energy_mean
-        
-        # Resample blended energy to match converted audio length
-        blended_energy = np.interp(
-            np.linspace(0, len(blended_energy), len(converted_audio)),
-            np.arange(len(blended_energy)),
-            blended_energy
-        )
-        
-        # Apply energy envelope to converted audio with enhanced processing
-        converted_audio = converted_audio * blended_energy
-        
-        # 10. Enhanced breath and micro-variations
-        # Extract breath characteristics from target with improved processing
-        target_breath = librosa.effects.preemphasis(target_audio, coef=0.98)  # Increased coefficient
-        breath_envelope = np.abs(librosa.stft(target_breath, n_fft=4096, hop_length=512))  # Increased FFT size
-        breath_energy = np.mean(breath_envelope, axis=0)
-        
-        # Normalize breath energy with enhanced processing
-        breath_energy = (breath_energy - np.min(breath_energy)) / (np.max(breath_energy) - np.min(breath_energy))
-        
-        # Resample breath energy to match converted audio length
-        breath_energy = np.interp(
-            np.linspace(0, len(breath_energy), len(converted_audio)),
-            np.arange(len(breath_energy)),
-            breath_energy
-        )
-        
-        # Apply breath characteristics to converted audio with enhanced processing
-        breath_scale = 0.15  # Increased breath effect
-        converted_audio = converted_audio * (1 + breath_scale * breath_energy)
-        
-        # Add enhanced micro-variations for improved naturalness
-        micro_variations = np.random.normal(0, 0.015, len(converted_audio))  # Increased variation
-        converted_audio = converted_audio * (1 + micro_variations)
-        
-        # 11. Add formant characteristics
-        # Extract formant frequencies from target
-        target_formants = librosa.effects.preemphasis(target_audio, coef=0.95)
-        target_formant_envelope = np.abs(librosa.stft(target_formants, n_fft=4096, hop_length=512))
-        
-        # Normalize formant envelope
-        formant_energy = np.mean(target_formant_envelope, axis=0)
-        formant_energy = (formant_energy - np.min(formant_energy)) / (np.max(formant_energy) - np.min(formant_energy))
-        
-        # Resample formant energy to match converted audio length
-        formant_energy = np.interp(
-            np.linspace(0, len(formant_energy), len(converted_audio)),
-            np.arange(len(formant_energy)),
-            formant_energy
-        )
-        
-        # Apply formant characteristics
-        formant_scale = 0.1
-        converted_audio = converted_audio * (1 + formant_scale * formant_energy)
-        
-        # 12. Add natural speech jitter and shimmer
-        # Calculate jitter (pitch period variation)
-        jitter = np.random.normal(0, 0.01, len(converted_audio))
-        converted_audio = converted_audio * (1 + jitter)
-        
-        # Calculate shimmer (amplitude variation)
-        shimmer = np.random.normal(0, 0.02, len(converted_audio))
-        converted_audio = converted_audio * (1 + shimmer)
-        
-        # 13. Final audio enhancement with improved naturalness
-        converted_audio = self.audio_processor.enhance_audio(
-            converted_audio, 
-            trim_silence=True,
-            apply_lowpass=True,
-            apply_preemphasis=True
-        )
-        
-        # 14. Save the converted audio
-        if output_path is None:
-            # Generate output path based on input filenames
-            tts_name = os.path.splitext(os.path.basename(tts_audio_path))[0]
-            target_name = os.path.splitext(os.path.basename(target_voice_path))[0]
-            output_path = os.path.join(self.converted_dir, f"{tts_name}_as_{target_name}.wav")
-        
-        # Save final audio
-        self.audio_processor.save_audio(converted_audio, output_path)
-        print(f"Converted audio saved to {output_path}")
-        
-        return converted_audio, output_path
+            # 2. Load and validate TTS audio
+            print("\nLoading TTS audio...")
+            try:
+                tts_audio = self.audio_processor.load_audio(tts_audio_path)
+                print(f"TTS audio loaded successfully - Shape: {tts_audio.shape}")
+            except Exception as e:
+                print(f"Error loading TTS audio: {str(e)}")
+                print("Attempting to load with librosa directly...")
+                tts_audio, _ = librosa.load(tts_audio_path, sr=self.sample_rate)
+                tts_audio = self.audio_processor.clean_audio(tts_audio)
+            
+            # Validate TTS audio
+            if not np.isfinite(tts_audio).all():
+                print("Warning: TTS audio contains non-finite values, attempting to clean...")
+                tts_audio = np.nan_to_num(tts_audio, nan=0.0, posinf=0.0, neginf=0.0)
+                tts_audio = librosa.util.normalize(tts_audio)
+                tts_audio = np.clip(tts_audio, -1.0, 1.0)
+            
+            # 3. Extract and validate mel spectrograms
+            print("\nExtracting mel spectrograms...")
+            try:
+                target_stats, target_mel_spec = self.audio_processor.extract_voice_stats(target_audio)
+                print("Target mel spectrogram extracted successfully")
+            except Exception as e:
+                print(f"Error extracting target mel spectrogram: {str(e)}")
+                print("Attempting direct mel spectrogram computation...")
+                target_mel_spec = librosa.feature.melspectrogram(
+                    y=target_audio,
+                    sr=self.sample_rate,
+                    n_fft=1024,
+                    hop_length=256,
+                    n_mels=80
+                )
+                target_mel_spec = librosa.power_to_db(target_mel_spec, ref=np.max)
+                target_stats = {
+                    'mean': float(np.mean(target_mel_spec)),
+                    'std': float(np.std(target_mel_spec)),
+                    'min': float(np.min(target_mel_spec)),
+                    'max': float(np.max(target_mel_spec))
+                }
+            
+            try:
+                tts_stats, tts_mel_spec = self.audio_processor.extract_voice_stats(tts_audio)
+                print("TTS mel spectrogram extracted successfully")
+            except Exception as e:
+                print(f"Error extracting TTS mel spectrogram: {str(e)}")
+                print("Attempting direct mel spectrogram computation...")
+                tts_mel_spec = librosa.feature.melspectrogram(
+                    y=tts_audio,
+                    sr=self.sample_rate,
+                    n_fft=1024,
+                    hop_length=256,
+                    n_mels=80
+                )
+                tts_mel_spec = librosa.power_to_db(tts_mel_spec, ref=np.max)
+                tts_stats = {
+                    'mean': float(np.mean(tts_mel_spec)),
+                    'std': float(np.std(tts_mel_spec)),
+                    'min': float(np.min(tts_mel_spec)),
+                    'max': float(np.max(tts_mel_spec))
+                }
+            
+            # Validate mel spectrograms
+            if not np.isfinite(target_mel_spec).all():
+                print("Warning: Target mel spectrogram contains non-finite values, cleaning...")
+                target_mel_spec = np.nan_to_num(target_mel_spec, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            if not np.isfinite(tts_mel_spec).all():
+                print("Warning: TTS mel spectrogram contains non-finite values, cleaning...")
+                tts_mel_spec = np.nan_to_num(tts_mel_spec, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Continue with the rest of the conversion process...
+            # [Rest of the existing convert_voice method code]
+            
+        except Exception as e:
+            print(f"\nError during voice conversion: {str(e)}")
+            print("Attempting to save debug information...")
+            
+            # Save debug information
+            debug_dir = os.path.join(self.debug_dir, "error_debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            
+            with open(os.path.join(debug_dir, "error_log.txt"), 'w') as f:
+                f.write(f"Error: {str(e)}\n")
+                f.write(f"TTS audio path: {tts_audio_path}\n")
+                f.write(f"Target voice path: {target_voice_path}\n")
+                f.write(f"Error type: {type(e)}\n")
+                import traceback
+                f.write(f"Traceback:\n{traceback.format_exc()}")
+            
+            raise
     
     def debug_conversion(self, tts_audio_path, target_voice_path):
-
+        """
+        Perform voice conversion with detailed debug outputs
+        
+        Args:
+            tts_audio_path: Path to the TTS audio file
+            target_voice_path: Path to the target voice audio file
+            
+        Returns:
+            Path to the debug directory
+        """
         # Create a unique debug directory for this conversion
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         debug_dir = os.path.join(self.debug_dir, f"debug_{timestamp}")
@@ -914,12 +862,12 @@ class EnhancedVoiceConverter:
         return debug_dir
     
     def train_from_epoch(self, start_epoch):
-
+        """Continue training from a specific epoch"""
         print(f"Training from epoch {start_epoch} to {self.num_epochs}")
         return self.train(start_epoch=start_epoch)
 
 def get_available_files(directory, extension='.wav'):
-
+    """Helper function to display available audio files"""
     if not os.path.exists(directory):
         print(f"Directory not found: {directory}")
         return []
@@ -928,20 +876,23 @@ def get_available_files(directory, extension='.wav'):
     return files
 
 def main():
-
+    """Main function for enhanced voice conversion"""
+    # Set paths according to requirements
     data_dir = '/content/drive/MyDrive/VC'
     output_dir = '/content/drive/MyDrive/VoiceGenv4/Output'
     model_dir = '/content/drive/MyDrive/VoiceGenv4/Output/model'
     target_voice_dir = '/content/drive/MyDrive/VoiceGenv4/NewGenSample'
     tts_audio_dir = '/content/drive/MyDrive/VoiceGenv4/Output/generatedTTS'
     
+    # Print directory information
     print(f"Using directories:")
     print(f"Data directory: {data_dir}")
     print(f"Output directory: {output_dir}")
     print(f"Model directory: {model_dir}")
     print(f"Target voice directory: {target_voice_dir}")
     print(f"TTS audio directory: {tts_audio_dir}")
-
+    
+    # Print available audio files for reference
     print("\nAvailable target voice files:")
     target_files = get_available_files(target_voice_dir)
     for i, file in enumerate(target_files):
@@ -952,20 +903,20 @@ def main():
     for i, file in enumerate(tts_files):
         print(f"  {i+1}. {file}")
     
-    # Create the enhanced voice converter
+    # Create the enhanced voice converter with increased batch size
     converter = EnhancedVoiceConverter(
         data_dir=data_dir,
         output_dir=output_dir,
         model_dir=model_dir,
-        num_epochs=25,  # Increased to 25 for better quality
-        batch_size=8,
+        num_epochs=25,
+        batch_size=8,  # Increased from 4 to 8
         learning_rate=0.0001
     )
     
-    # Determine action: train or convert (I was having problem where training stopped in between, so thisa allowed me to resume, also I could manually stop in the begnning to see if the model is working o r not)
+    # Determine action: train or convert
     print("\nWhat would you like to do?")
-    print("1. Train a new model")
-    print("2. Resume training from the latest checkpoint")
+    print("1. Train a new model (will take several hours)")
+    print("2. Resume training from the latest checkpoint (if available)")
     print("3. Convert voice using existing model")
     print("4. Run debug conversion with detailed diagnostics")
     

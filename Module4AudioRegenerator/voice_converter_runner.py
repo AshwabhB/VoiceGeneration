@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# voice_converter_runner.py - Enhanced Voice Converter Runner, I have this to easily run it in colab. the main() can be directly called from other file too. 
+# voice_converter_runner.py - Enhanced Voice Converter Runner
 
 import os
 import sys
@@ -15,12 +15,14 @@ except ImportError:
     IN_COLAB = False
 
 def create_module_directory():
+    """Create the module directory structure"""
     target_dir = os.path.join(os.getcwd(), 'Module4AudioRegenerator')
     os.makedirs(target_dir, exist_ok=True)
     print(f"Created module directory: {target_dir}")
     return target_dir
 
 def install_dependencies():
+    """Install required dependencies"""
     print("Installing required dependencies...")
     
     packages = [
@@ -47,6 +49,7 @@ def install_dependencies():
     print("Dependencies installed.")
 
 def save_module_files(module_dir):
+    """Save the module files to the specified directory"""
     module_files = {
         '__init__.py': '# Module initialization file\n'
     }
@@ -59,6 +62,7 @@ def save_module_files(module_dir):
         print(f"  Saved {file_name}")
 
 def get_available_files(directory, extension='.wav'):
+    """Helper function to display available audio files"""
     if not os.path.exists(directory):
         print(f"Directory not found: {directory}")
         return []
@@ -67,19 +71,22 @@ def get_available_files(directory, extension='.wav'):
     return files
 
 def main():
-
+    """Main function for enhanced voice conversion"""
+    # Set paths according to requirements
     data_dir = '/content/drive/MyDrive/VC'
     output_dir = '/content/drive/MyDrive/VoiceGenv4/Output'
     model_dir = '/content/drive/MyDrive/VoiceGenv4/Output/model'
     target_voice_dir = '/content/drive/MyDrive/VoiceGenv4/NewGenSample'
     tts_audio_dir = '/content/drive/MyDrive/VoiceGenv4/Output/generatedTTS'
     
+    # Create necessary directories
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
     os.makedirs(target_voice_dir, exist_ok=True)
     os.makedirs(tts_audio_dir, exist_ok=True)
     
+    # Print directory information
     print(f"Using directories:")
     print(f"Data directory: {data_dir}")
     print(f"Output directory: {output_dir}")
@@ -87,6 +94,7 @@ def main():
     print(f"Target voice directory: {target_voice_dir}")
     print(f"TTS audio directory: {tts_audio_dir}")
     
+    # Print available audio files for reference
     print("\nAvailable target voice files:")
     target_files = get_available_files(target_voice_dir)
     for i, file in enumerate(target_files):
@@ -107,14 +115,13 @@ def main():
         learning_rate=0.0001
     )
     
-    # Determine action: train or convert (I was having problem where training stopped in between, so thisa allowed me to resume, also I could manually stop in the begnning to see if the model is working o r not)
+    # Determine action: train or convert
     print("\nWhat would you like to do?")
     print("1. Train a new model (will take several hours)")
-    print("2. Resume training from the latest checkpoint")
+    print("2. Resume training from the latest checkpoint (if available)")
     print("3. Convert voice using existing model")
     print("4. Run debug conversion with detailed diagnostics")
     
-
     choice = input("Enter your choice (1-4): ")
     
     if choice == '1':

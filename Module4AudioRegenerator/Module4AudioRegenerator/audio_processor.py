@@ -1,4 +1,3 @@
-
 import os
 import numpy as np
 import librosa
@@ -29,69 +28,178 @@ class AudioProcessor:
         self.fmax = fmax
         self.griffin_lim_iters = griffin_lim_iters
     
-    def load_audio(self, audio_path):
-        audio, sr = librosa.load(audio_path, sr=self.sample_rate)
+    def clean_audio(self, audio):
+        """Clean audio by removing non-finite values and normalizing"""
+        # Convert to float32 if not already
+        audio = audio.astype(np.float32)
+        
+        # Replace non-finite values with zeros
+        audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # Remove DC offset
+        audio = audio - np.mean(audio)
+        
+        # Normalize audio to prevent extreme values
         audio = librosa.util.normalize(audio)
+        
+        # Clip to prevent any remaining extreme values
+        audio = np.clip(audio, -1.0, 1.0)
+        
         return audio
+    
+    def load_audio(self, audio_path):
+        """Load and clean audio file with enhanced validation"""
+        try:
+            print(f"Loading audio file: {audio_path}")
+            
+            # Load audio with librosa
+            audio, sr = librosa.load(audio_path, sr=self.sample_rate)
+            print(f"Initial audio stats - Shape: {audio.shape}, Mean: {np.mean(audio):.4f}, Std: {np.std(audio):.4f}")
+            
+            # Check for non-finite values before cleaning
+            non_finite_count = np.sum(~np.isfinite(audio))
+            if non_finite_count > 0:
+                print(f"Warning: Found {non_finite_count} non-finite values before cleaning")
+            
+            # Convert to float32 if not already
+            audio = audio.astype(np.float32)
+            
+            # Replace non-finite values with zeros
+            audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Remove DC offset
+            audio = audio - np.mean(audio)
+            
+            # Normalize audio to prevent extreme values
+            audio = librosa.util.normalize(audio)
+            
+            # Clip to prevent any remaining extreme values
+            audio = np.clip(audio, -1.0, 1.0)
+            
+            # Additional cleaning steps
+            # 1. Remove any remaining NaN or Inf values
+            audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # 2. Remove any remaining extreme values
+            audio = np.clip(audio, -1.0, 1.0)
+            
+            # 3. Apply a gentle low-pass filter to remove any high-frequency artifacts
+            nyquist = 0.5 * self.sample_rate
+            normal_cutoff = 0.9  # Keep 90% of the frequency range
+            b, a = signal.butter(4, normal_cutoff, btype='low')
+            audio = signal.filtfilt(b, a, audio)
+            
+            # 4. Final normalization
+            audio = librosa.util.normalize(audio)
+            
+            # Validate audio after cleaning
+            if not np.isfinite(audio).all():
+                print("Warning: Audio still contains non-finite values after cleaning")
+                print(f"Non-finite count: {np.sum(~np.isfinite(audio))}")
+                print(f"NaN count: {np.sum(np.isnan(audio))}")
+                print(f"Inf count: {np.sum(np.isinf(audio))}")
+                
+                # Last resort: replace any remaining non-finite values with zeros
+                audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Final validation
+            if not np.isfinite(audio).all():
+                raise ValueError("Failed to clean audio: non-finite values remain after all cleaning steps")
+            
+            print(f"Final audio stats - Shape: {audio.shape}, Mean: {np.mean(audio):.4f}, Std: {np.std(audio):.4f}")
+            return audio
+            
+        except Exception as e:
+            print(f"Error loading audio file {audio_path}: {str(e)}")
+            print(f"Error type: {type(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            raise
     
     def audio_to_mel(self, audio):
-        # Compute mel spectrogram
-        mel_spec = librosa.feature.melspectrogram(
-            y=audio,
-            sr=self.sample_rate,
-            n_mels=self.n_mels,
-            hop_length=self.hop_length,
-            win_length=self.win_length,
-            fmin=self.fmin,
-            fmax=self.fmax,
-            power=2.0  # Power 2.0 for energy instead of amplitude
-        )
-        
-        # Convert to log scale
-        mel_spec_db = librosa.power_to_db(mel_spec)
-        
-        return mel_spec_db
-    
-    def mel_to_audio(self, mel_spec_db, griffin_lim_iters=None):
-
-        if griffin_lim_iters is None:
-            griffin_lim_iters = self.griffin_lim_iters
+        """Convert audio to mel spectrogram with validation"""
+        try:
+            # Clean audio first
+            audio = self.clean_audio(audio)
             
-        # Convert from log scale back to linear
-        mel_spec = librosa.db_to_power(mel_spec_db)
-        
-        # Convert mel spectrogram to audio with specified iterations
-        audio = librosa.feature.inverse.mel_to_audio(
-            mel_spec,
-            sr=self.sample_rate,
-            n_fft=self.win_length,
-            hop_length=self.hop_length,
-            win_length=self.win_length,
-            fmin=self.fmin,
-            fmax=self.fmax,
-            power=2.0,
-            n_iter=griffin_lim_iters
-        )
-        
-        return audio
+            # Compute mel spectrogram
+            mel_spec = librosa.feature.melspectrogram(
+                y=audio,
+                sr=self.sample_rate,
+                n_fft=self.win_length,
+                hop_length=self.hop_length,
+                n_mels=self.n_mels,
+                fmin=self.fmin,
+                fmax=self.fmax
+            )
+            
+            # Convert to log scale
+            mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
+            
+            # Clean mel spectrogram
+            mel_spec = np.nan_to_num(mel_spec, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Normalize mel spectrogram
+            mel_spec = (mel_spec - mel_spec.mean()) / (mel_spec.std() + 1e-8)
+            
+            return mel_spec
+            
+        except Exception as e:
+            print(f"Error converting audio to mel spectrogram: {str(e)}")
+            raise
+    
+    def mel_to_audio(self, mel_spec, griffin_lim_iters=32):
+        """Convert mel spectrogram back to audio with validation"""
+        try:
+            # Clean mel spectrogram
+            mel_spec = np.nan_to_num(mel_spec, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Convert from log scale to power
+            mel_power = librosa.db_to_power(mel_spec)
+            
+            # Clean power spectrogram
+            mel_power = np.nan_to_num(mel_power, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Convert to audio using Griffin-Lim
+            audio = librosa.feature.inverse.mel_to_audio(
+                mel_power,
+                sr=self.sample_rate,
+                n_fft=self.win_length,
+                hop_length=self.hop_length,
+                n_iter=griffin_lim_iters
+            )
+            
+            # Clean the reconstructed audio
+            audio = self.clean_audio(audio)
+            
+            return audio
+            
+        except Exception as e:
+            print(f"Error converting mel spectrogram to audio: {str(e)}")
+            raise
     
     def extract_voice_stats(self, audio):
-
-        # Get mel spectrogram
-        mel_spec_db = self.audio_to_mel(audio)
-        
-        # Extract stats
-        stats = {
-            'mean': float(np.mean(mel_spec_db)),
-            'std': float(np.std(mel_spec_db)),
-            'min': float(np.min(mel_spec_db)),
-            'max': float(np.max(mel_spec_db)),
-            'median': float(np.median(mel_spec_db)),
-            'q1': float(np.percentile(mel_spec_db, 25)),
-            'q3': float(np.percentile(mel_spec_db, 75))
-        }
-        
-        return stats, mel_spec_db
+        """Extract voice statistics with validation"""
+        try:
+            # Clean audio first
+            audio = self.clean_audio(audio)
+            
+            # Extract mel spectrogram
+            mel_spec = self.audio_to_mel(audio)
+            
+            # Calculate statistics
+            stats = {
+                'mean': float(np.mean(mel_spec)),
+                'std': float(np.std(mel_spec)),
+                'min': float(np.min(mel_spec)),
+                'max': float(np.max(mel_spec))
+            }
+            
+            return stats, mel_spec
+            
+        except Exception as e:
+            print(f"Error extracting voice statistics: {str(e)}")
+            raise
     
     def apply_lowpass_filter(self, audio, cutoff=3500):
         
@@ -105,25 +213,29 @@ class AudioProcessor:
         
         return filtered_audio
     
-    def enhance_audio(self, audio, trim_silence=True, apply_lowpass=True, 
-                      apply_preemphasis=True):
-        
-        # Apply pre-emphasis to enhance clarity
-        if apply_preemphasis:
-            audio = librosa.effects.preemphasis(audio, coef=0.97)
-        
-        # Apply low-pass filter to reduce high-frequency noise
-        if apply_lowpass:
-            audio = self.apply_lowpass_filter(audio)
-        
-        # Trim silence
-        if trim_silence:
-            audio, _ = librosa.effects.trim(audio, top_db=20)
-        
-        # Normalize amplitude
-        audio = librosa.util.normalize(audio)
-        
-        return audio
+    def enhance_audio(self, audio, trim_silence=True, apply_lowpass=True, apply_preemphasis=True):
+        """Enhance audio with validation"""
+        try:
+            # Clean audio first
+            audio = self.clean_audio(audio)
+            
+            if trim_silence:
+                audio = librosa.effects.trim(audio, top_db=20)[0]
+            
+            if apply_lowpass:
+                audio = librosa.effects.preemphasis(audio, coef=0.97)
+            
+            if apply_preemphasis:
+                audio = librosa.effects.preemphasis(audio, coef=0.95)
+            
+            # Final cleaning
+            audio = self.clean_audio(audio)
+            
+            return audio
+            
+        except Exception as e:
+            print(f"Error enhancing audio: {str(e)}")
+            raise
     
     def split_audio_into_chunks(self, mel_spec, chunk_size=8192, overlap=0.5):
         
@@ -247,38 +359,54 @@ class AudioProcessor:
         return combined
 
     def save_audio(self, audio, path):
-        
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        
-        # Normalize and save
-        audio = librosa.util.normalize(audio)
-        sf.write(path, audio, self.sample_rate)
+        """Save audio with validation"""
+        try:
+            # Clean audio first
+            audio = self.clean_audio(audio)
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            
+            # Normalize and save
+            audio = librosa.util.normalize(audio)
+            sf.write(path, audio, self.sample_rate)
+            
+        except Exception as e:
+            print(f"Error saving audio: {str(e)}")
+            raise
 
     def extract_pitch(self, audio):
-
-        if PARSELMOUTH_AVAILABLE:
-            # Use Parselmouth/Praat if available
-            sound = parselmouth.Sound(audio, self.sample_rate)
-            pitch = sound.to_pitch()
-            pitch_values = pitch.selected_array['frequency']
-            voiced_frames = pitch_values > 0
-        else:
-            # Fallback method using librosa
-            pitch_values, voiced_flag = librosa.core.piptrack(
-                y=audio, 
-                sr=self.sample_rate,
-                n_fft=self.win_length,
-                hop_length=self.hop_length,
-                fmin=self.fmin,
-                fmax=self.fmax
-            )
+        """Extract pitch with validation"""
+        try:
+            # Clean audio first
+            audio = self.clean_audio(audio)
             
-            # Get the most prominent pitch in each frame
-            pitch_values = np.mean(pitch_values, axis=0)
-            voiced_frames = pitch_values > 0.5  # Simple thresholding
-        
-        return pitch_values, voiced_frames
+            if PARSELMOUTH_AVAILABLE:
+                # Use Parselmouth/Praat if available
+                sound = parselmouth.Sound(audio, self.sample_rate)
+                pitch = sound.to_pitch()
+                pitch_values = pitch.selected_array['frequency']
+                voiced_frames = pitch_values > 0
+            else:
+                # Fallback method using librosa
+                pitch_values, voiced_flag = librosa.core.piptrack(
+                    y=audio, 
+                    sr=self.sample_rate,
+                    n_fft=self.win_length,
+                    hop_length=self.hop_length,
+                    fmin=self.fmin,
+                    fmax=self.fmax
+                )
+                
+                # Get the most prominent pitch in each frame
+                pitch_values = np.mean(pitch_values, axis=0)
+                voiced_frames = pitch_values > 0.5  # Simple thresholding
+            
+            return pitch_values, voiced_frames
+            
+        except Exception as e:
+            print(f"Error extracting pitch: {str(e)}")
+            raise
 
     def extract_duration(self, audio):
 
@@ -329,40 +457,45 @@ class AudioProcessor:
         return stress_features
 
     def extract_linguistic_features(self, audio):
-
-        # Extract pitch features
-        pitch_values, voiced_frames = self.extract_pitch(audio)
-        
-        # Handle the case of no voiced frames
-        if np.sum(voiced_frames) > 0:
-            pitch_features = {
-                'mean_pitch': float(np.mean(pitch_values[voiced_frames])),
-                'std_pitch': float(np.std(pitch_values[voiced_frames])),
-                'pitch_range': float(np.max(pitch_values[voiced_frames]) - np.min(pitch_values[voiced_frames])),
-                'voiced_ratio': float(np.mean(voiced_frames))
+        """Extract linguistic features with validation"""
+        try:
+            # Clean audio first
+            audio = self.clean_audio(audio)
+            
+            # Extract pitch
+            pitch, voiced = self.extract_pitch(audio)
+            
+            # Extract duration features
+            duration_features = {
+                'speech_rate': float(np.mean(voiced)),
+                'pause_duration': float(np.mean(~voiced)),
+                'word_duration': float(np.mean(np.diff(np.where(voiced)[0])))
             }
-        else:
-            pitch_features = {
-                'mean_pitch': 0.0,
-                'std_pitch': 0.0,
-                'pitch_range': 0.0,
-                'voiced_ratio': 0.0
+            
+            # Extract stress features
+            stress_features = {
+                'mean_peak_height': float(np.mean(pitch[voiced])),
+                'stress_pattern': float(np.std(pitch[voiced])),
+                'emphasis_marker': float(np.max(pitch[voiced]))
             }
-        
-        # Extract duration features
-        duration_features = self.extract_duration(audio)
-        
-        # Extract stress features
-        stress_features = self.extract_stress(audio)
-        
-        # Combine all features
-        linguistic_features = {
-            'pitch': pitch_features,
-            'duration': duration_features,
-            'stress': stress_features
-        }
-        
-        return linguistic_features
+            
+            # Extract prosody features
+            prosody_features = {
+                'pitch_contour': float(np.mean(np.diff(pitch[voiced]))),
+                'energy_envelope': float(np.mean(librosa.feature.rms(y=audio)[0])),
+                'timing_pattern': float(np.std(np.diff(np.where(voiced)[0]))),
+                'rhythm_marker': float(np.mean(np.abs(np.diff(pitch[voiced]))))
+            }
+            
+            return {
+                'duration': duration_features,
+                'stress': stress_features,
+                'prosody': prosody_features
+            }
+            
+        except Exception as e:
+            print(f"Error extracting linguistic features: {str(e)}")
+            raise
 
 # Utility function for blending source and target statistics
 def blend_statistics(source_stats, target_stats, blend_ratio=0.7):

@@ -1,4 +1,4 @@
-Key Areas for Improvement in Audio Generation.  Based on data from the features from audio_comparison_analysis_sophisticated.py
+Key Areas for Improvement in Audio Generation.  Based on data from the features from audio_comparison_analysis_sophisticated.py, What is causing low similarity score. 
 
 1. Formant Features (Critical Issue)
    - Formant 1, 2, and 3 all show 0.0000 similarity

@@ -111,12 +111,12 @@ if __name__ == "__main__":
         text = input("Enter the text you want to convert to speech: ")
     elif choice == "2":
         # Option 2: Generate text from audio file
-        audio_dir = "C:/Users/ashwa/OneDrive/Documents/Projects/VoiceGeneration Project/Module3TranscriberAndGenerator/"
+        audio_dir = "C:/Users/ashwa/OneDrive/Documents/Projects/VoiceGeneration Project/\Module5TTS/tobegen"
         wav_files = [f for f in os.listdir(audio_dir) if f.endswith('.wav')]
         
         if not wav_files:
             print("No .wav files found in the specified directory.")
-            text = "With my women, physical perfection, but it doesn't have to be skinny or like tone like I"  # Fallback text that I used from one of the actual audio transcriptions for testing
+            text = "I tell him he is quite in luck to be sent here for his health."  # Fallback text that I used from one of the actual audio transcriptions for testing
         else:
             # Use the first .wav file found
             audio_file = os.path.join(audio_dir, wav_files[0])
@@ -129,7 +129,7 @@ if __name__ == "__main__":
                 print(f"Generated continuation: {text}")
             except Exception as e:
                 print(f"Error processing audio: {str(e)}")
-                text = "With my women, physical perfection, but it doesn't have to be skinny or like tone like I"  # Fallback text that I used from one of the actual audio transcriptions for testing
+                text = "I tell him he is quite in luck to be sent here for his health."  # Fallback text that I used from one of the actual audio transcriptions for testing
     else:
         print("Invalid choice. Please enter either 1 or 2.")
         sys.exit(1)
